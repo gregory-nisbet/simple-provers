@@ -96,6 +96,12 @@ sub translate_rpn {
       @stack >= 2 or croak 'stack underflow';
       push @stack, ('if' . '(' . (join ",", pop2_arr_ref(\@stack)) . ')');
     }
+    elsif ($word eq '%') {
+      # total hack, reversed / .
+      # save \ for line continuation
+      @stack >= 2 or croak 'stack underflow';
+      push @stack, ('if' . '(' . (join ",", reverse(pop2_arr_ref(\@stack))) . ')');
+    }
     else {
       croak "---$word---";
     }
@@ -135,6 +141,9 @@ my %vars;
 while (<$fh>) {
   chomp;
   my $line = $_;
+  next if $line eq '';
+  # skip comments
+  next if $line =~ /^\s*[#]/;
   my $translated = translate_rpn($line);
   push @prologified_proof_lines, $translated->{expr};
   %vars = (%vars, %{ $translated->{vars} });
@@ -244,29 +253,35 @@ entailed(C, _) :- axiom(C).
 entailed(C, PREMS) :- member(X, PREMS),  entailed_or(X, C).
 entailed(C, PREMS) :- member(X, PREMS), entailed_and(X, C).
 entailed(C, PREMS) :- member(X, PREMS),  entailed_if(X, C).
-entailed(C, PREMS) :- member(X, PREMS), entailed_not(X, C).
+entailed(C, PREMS) :- member(X, PREMS), entailed_neg(X, C).
 
 % binary inference rules
-entailed(C, PREMS) :- member(X, PREMS), member(Y, PREMS),  bentailed_or(X, C).
-entailed(C, PREMS) :- member(X, PREMS), member(Y, PREMS), bentailed_and(X, C).
-entailed(C, PREMS) :- member(X, PREMS), member(Y, PREMS),  bentailed_if(X, C).
-entailed(C, PREMS) :- member(X, PREMS), member(Y, PREMS), bentailed_not(X, C).
+entailed(C, PREMS) :- member(X, PREMS), member(Y, PREMS),  bentailed_or(X, Y, C).
+entailed(C, PREMS) :- member(X, PREMS), member(Y, PREMS), bentailed_and(X, Y, C).
+entailed(C, PREMS) :- member(X, PREMS), member(Y, PREMS),  bentailed_if(X, Y, C).
 
 
 % axioms for hilbert system
 % since we can also convert if to or we might not
 % need anything else
 
-axiom(if(F, F)).
+
+% this axiom technically is not needed
+% axiom(if(F, F)).
 
 axiom(if(F, if(P, F))).
 
 axiom(if(
   if(F, if(P, X)),
-  if(if(F, P), if(P, X)))).
+  if(if(F, P), if(F, X)))).
 
 axiom(if(if(not(F), not(P)),
         if(P, F))).
+
+
+axiom(if(if(P, F),
+        if(not(F), not(P)))).
+
 
 % variable section
 
@@ -294,7 +309,7 @@ wellformed_list(X) :- \+ malformed_list(X).
 
 classify_proof(ITEMS, OUT) :-
   (malformed_list(ITEMS, W), OUT = malformed(W)) ;
-  (reject_proof(ITEMS, BADITEM), OUT = bad(BADITEM)) ;
+  (reject_proof(ITEMS, BADITEM), last(BADITEM, REPORTED_BADITEM), OUT = bad(REPORTED_BADITEM)) ;
   (OUT = good) .
 
 % target
